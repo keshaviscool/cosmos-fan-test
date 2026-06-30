@@ -1,0 +1,113 @@
+x-airflow-common: &airflow-common
+  build: .
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-meta-db/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: "30"
+    AIRFLOW_UID: "50000"
+    DBT_REPO: "file:///opt/airflow/local_git/dwh-transforms.git"
+    MANIFEST_LOCAL_PATH: "/opt/airflow/manifest_store/manifest.json"
+    MANIFEST_STORE_DIR: "/opt/airflow/manifest_store"
+    PROFILES_DIR: "/opt/airflow/dbt_profiles"
+    DBT_BINARY: "/opt/airflow/dbt_env/bin/dbt"
+    COSMOS_TEST_BEHAVIOR: "after_each"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./scripts:/opt/airflow/scripts
+    - ./dbt_profiles:/opt/airflow/dbt_profiles:ro
+    - manifest_store:/opt/airflow/manifest_store
+    - git_store:/opt/airflow/local_git:ro
+    - ./logs:/opt/airflow/logs
+  depends_on:
+    airflow-meta-db:
+      condition: service_healthy
+    warehouse-db:
+      condition: service_healthy
+
+services:
+  airflow-meta-db:
+    image: postgres:15
+    container_name: cosmos_fanout_meta_db
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - pgdata_meta:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  warehouse-db:
+    image: postgres:15
+    container_name: cosmos_fanout_warehouse_db
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: warehouse
+    volumes:
+      - pgdata_warehouse:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "warehouse"]
+      interval: 5s
+      retries: 5
+
+  git-seed:
+    build: .
+    container_name: cosmos_fanout_git_seed
+    entrypoint: /bin/bash
+    command: ["-c", "bash /opt/airflow/scripts/seed_git_repo.sh /seed-src /git-store/dwh-transforms.git"]
+    volumes:
+      - ./dbt_source_repo:/seed-src:ro
+      - ./scripts:/opt/airflow/scripts:ro
+      - git_store:/git-store
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: cosmos_fanout_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate && \
+        airflow users create --username admin --password admin \
+          --firstname admin --lastname admin --role Admin --email admin@example.com && \
+        airflow variables set APP_ENV stage && \
+        airflow variables set git-read-secret unused-for-local-clone && \
+        airflow connections add postgres_warehouse \
+          --conn-type postgres \
+          --conn-host warehouse-db \
+          --conn-login warehouse \
+          --conn-password warehouse \
+          --conn-port 5432 \
+          --conn-schema warehouse
+
+  scheduler:
+    <<: *airflow-common
+    container_name: cosmos_fanout_scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  webserver:
+    <<: *airflow-common
+    container_name: cosmos_fanout_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata_meta:
+  pgdata_warehouse:
+  git_store:
+  manifest_store:

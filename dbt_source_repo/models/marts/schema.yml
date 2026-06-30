@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: mart_customer_orders
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+
+  - name: mart_daily_revenue
+    columns:
+      - name: order_date
+        tests:
+          - not_null
+
+  - name: mart_top_customers
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+
+  - name: mart_order_counts
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+
+  - name: mart_avg_order_value
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+
+  - name: mart_customer_segments
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null

@@ -1,0 +1,4 @@
+astronomer-cosmos==1.14.2
+gitpython==3.1.43
+apache-airflow-providers-slack>=8.0.0
+apache-airflow-providers-postgres>=5.0.0
