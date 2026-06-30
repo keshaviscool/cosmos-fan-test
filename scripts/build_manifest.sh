@@ -11,9 +11,11 @@ DBT_BINARY="${DBT_BINARY:-/opt/airflow/dbt_env/bin/dbt}"
 
 BUILD_DIR=$(mktemp -d)
 echo "Simulating CI: cloning $REPO_URL into $BUILD_DIR"
+git config --global --add safe.directory /opt/airflow/local_git/dwh-transforms.git
 git clone --depth 1 "$REPO_URL" "$BUILD_DIR"
 
 cd "$BUILD_DIR"
+unset PYTHONPATH
 "$DBT_BINARY" deps || true
 "$DBT_BINARY" parse --profiles-dir "$PROFILES_DIR"
 
